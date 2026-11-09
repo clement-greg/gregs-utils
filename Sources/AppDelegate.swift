@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Settings.registerDefaults()
 
-        store = ClipboardStore(maxItems: max(10, defaults.integer(forKey: "maxItems")))
+        store = ClipboardStore(maxItems: Settings.maxItems)
         store.start()
         history = HistoryWindowController(store: store)
         history.onOpenInEditor = { text in EditorApp.shared.newNote(text: text) }
@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         EditorApp.shared.installMenu()
         setUpStatusItem()
         registerHotKeys()
+        SettingsWindowController.shared.store = store
         SettingsWindowController.shared.applyShortcut = { [weak self] key, spec in
             self?.applyShortcut(key: key, spec: spec)
         }
@@ -125,7 +126,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        add("Launch at Login", #selector(toggleLaunchAtLogin), state: SMAppService.mainApp.status == .enabled)
         if !CGPreflightScreenCaptureAccess() {
             add("Grant Screen Recording Access (needed to capture)…", #selector(openScreenRecordingSettings))
         }
@@ -171,18 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.set(true, forKey: key)
         try? SMAppService.mainApp.register()
     }
-
-    @objc private func toggleLaunchAtLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            alert("Couldn't change Launch at Login", error.localizedDescription)
-        }
-    }
+    // Turning it on or off is in Settings.
 
     // MARK: Permissions
 

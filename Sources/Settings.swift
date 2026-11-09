@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// The settings that live in UserDefaults, with their defaults.
 enum Settings {
@@ -15,9 +16,17 @@ enum Settings {
     ]
 
     static let singleClickPastesKey = "singleClickPastes"
+    static let maxItemsKey = "maxItems"
+    static let defaultMaxItems = 200
+    static let maxItemsRange = 10...10_000
+
+    /// The most unpinned items clipboard history keeps.
+    static var maxItems: Int {
+        min(max(UserDefaults.standard.integer(forKey: maxItemsKey), maxItemsRange.lowerBound), maxItemsRange.upperBound)
+    }
 
     static func registerDefaults() {
-        var d: [String: Any] = ["maxItems": 200, singleClickPastesKey: true]
+        var d: [String: Any] = [maxItemsKey: defaultMaxItems, singleClickPastesKey: true]
         for s in shortcuts { d[s.key] = s.defaultSpec }
         UserDefaults.standard.register(defaults: d)
     }
@@ -106,7 +115,7 @@ final class ShortcutRecorder: NSButton {
 // MARK: - Settings window
 
 @MainActor
-final class SettingsWindowController: NSObject, NSWindowDelegate {
+final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
     static let shared = SettingsWindowController()
 
     /// Applies a new hotkey for a Settings.shortcuts key. Returns an error message if it can't be used.
@@ -117,11 +126,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let singleClick = NSButton(checkboxWithTitle: "Paste with a single click (otherwise double-click)",
                                        target: nil, action: nil)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
+    private let launchAtLogin = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
+    private let maxItemsField = NSTextField()
+    private let maxItemsStepper = NSStepper()
+    private var confirmingMaxItems = false
+    /// The clipboard history, so a new item limit applies right away.
+    weak var store: ClipboardStore?
 
     func show() {
         if window == nil { build() }
         for (key, r) in recorders { r.spec = Settings.spec(for: key) }
         singleClick.state = Settings.singleClickPastes ? .on : .off
+        // Read from the system each time: it can also be changed in System Settings → Login Items.
+        launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        showMaxItems(Settings.maxItems)
         errorLabel.stringValue = ""
         window?.center()
         NSApp.activate(ignoringOtherApps: true)
@@ -164,19 +182,46 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         singleClick.target = self
         singleClick.action = #selector(singleClickChanged)
+        launchAtLogin.target = self
+        launchAtLogin.action = #selector(launchAtLoginChanged)
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.allowsFloats = false
+        formatter.minimum = NSNumber(value: Settings.maxItemsRange.lowerBound)
+        formatter.maximum = NSNumber(value: Settings.maxItemsRange.upperBound)
+        maxItemsField.formatter = formatter
+        maxItemsField.alignment = .right
+        maxItemsField.delegate = self
+        maxItemsField.target = self
+        maxItemsField.action = #selector(maxItemsFieldChanged)
+        maxItemsField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        maxItemsStepper.minValue = Double(Settings.maxItemsRange.lowerBound)
+        maxItemsStepper.maxValue = Double(Settings.maxItemsRange.upperBound)
+        maxItemsStepper.increment = 50
+        maxItemsStepper.valueWraps = false
+        maxItemsStepper.target = self
+        maxItemsStepper.action = #selector(maxItemsStepperChanged)
+        let pinnedNote = NSTextField(labelWithString: "items (pinned items don't count)")
+        pinnedNote.textColor = .secondaryLabelColor
+        let maxItemsRow = NSStackView(views: [NSTextField(labelWithString: "Keep up to"),
+                                              maxItemsField, maxItemsStepper, pinnedNote])
+        maxItemsRow.spacing = 6
 
         let reset = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults))
 
         let stack = NSStackView(views: [
+            header("General"), launchAtLogin,
             header("Shortcuts"), grid, hint, errorLabel,
-            header("Clipboard History"), singleClick,
+            header("Clipboard History"), singleClick, maxItemsRow,
             reset,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
+        stack.setCustomSpacing(22, after: launchAtLogin)
         stack.setCustomSpacing(18, after: errorLabel)
-        stack.setCustomSpacing(22, after: singleClick)
+        stack.setCustomSpacing(22, after: maxItemsRow)
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -201,6 +246,61 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return nil
     }
 
+    // MARK: History limit
+
+    private func showMaxItems(_ n: Int) {
+        maxItemsField.integerValue = n
+        maxItemsStepper.integerValue = n
+    }
+
+    @objc private func maxItemsFieldChanged() { commitMaxItems(maxItemsField.integerValue) }
+    @objc private func maxItemsStepperChanged() { commitMaxItems(maxItemsStepper.integerValue) }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        if (obj.object as? NSTextField) === maxItemsField { commitMaxItems(maxItemsField.integerValue) }
+    }
+
+    /// Applies a new limit. If it would delete items, asks first (and puts the old value back on Cancel).
+    private func commitMaxItems(_ value: Int) {
+        guard !confirmingMaxItems else { return } // Return fires both the action and end-editing
+        let n = min(max(value, Settings.maxItemsRange.lowerBound), Settings.maxItemsRange.upperBound)
+        let current = Settings.maxItems
+        guard n != current else { showMaxItems(n); return }
+        let apply = { [weak self] in
+            UserDefaults.standard.set(n, forKey: Settings.maxItemsKey)
+            self?.store?.setMaxItems(n)
+            self?.showMaxItems(n)
+        }
+        let removed = store?.overflow(ifLimitWere: n) ?? 0
+        guard removed > 0, let window else { apply(); return }
+
+        let alert = NSAlert()
+        alert.messageText = "Delete \(removed) clipboard item\(removed == 1 ? "" : "s")?"
+        alert.informativeText = "History has more than \(n) unpinned items. The \(removed) oldest will be deleted. "
+            + "This can't be undone. Pinned items are kept."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        showMaxItems(n)
+        confirmingMaxItems = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.confirmingMaxItems = false
+            if response == .alertFirstButtonReturn { apply() } else { self?.showMaxItems(current) }
+        }
+    }
+
+    @objc private func launchAtLoginChanged() {
+        do {
+            if launchAtLogin.state == .on {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            if let window { NSAlert(error: error).beginSheetModal(for: window) }
+        }
+        launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
     @objc private func singleClickChanged() {
         UserDefaults.standard.set(singleClick.state == .on, forKey: Settings.singleClickPastesKey)
     }
@@ -216,6 +316,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         UserDefaults.standard.removeObject(forKey: Settings.singleClickPastesKey)
         show()
         errorLabel.stringValue = problems.joined(separator: "\n")
+        commitMaxItems(Settings.defaultMaxItems) // asks first if this would delete items
     }
 
     func windowWillClose(_ notification: Notification) {

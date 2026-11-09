@@ -222,6 +222,16 @@ final class ClipboardStore {
         changed()
     }
 
+    /// How many unpinned items a limit of `n` would delete right now.
+    func overflow(ifLimitWere n: Int) -> Int { max(0, items.count - pinnedCount - n) }
+
+    /// Changes the limit on unpinned items, deleting the oldest ones beyond it.
+    func setMaxItems(_ n: Int) {
+        maxItems = n
+        trim()
+        changed()
+    }
+
     private func trim() {
         let limit = pinnedCount + maxItems
         if items.count > limit {

@@ -6,7 +6,7 @@ One menu-bar app for macOS that combines three earlier tools:
 - **Clipboard History** (formerly Clipboard Manager): searchable history of everything you copy.
 - **Editor** (formerly PlainPad): a plain-text editor with tabs, autosave, and JSON tools.
 
-It lives in the menu bar (wrench icon) and launches at login. A Dock icon and app menus appear only while an editor window is open.
+It lives in the menu bar (wrench icon) and launches at login (turn that off in Settings). A Dock icon and app menus appear only while an editor window is open.
 
 ## Build & install
 
@@ -95,11 +95,7 @@ Pinned items stay at the top in the order you pinned them, so their ⌘1–9 sho
 
 Text you copy is recorded automatically. Images are recorded only when they come from Capture; they show a thumbnail and preview.
 
-```bash
-defaults write com.gregc.gregsutils maxItems 500
-```
-
-The default limit is 200 items. The menu-bar menu has Pause Clipboard Recording and Clear Clipboard History.
+History keeps up to 200 unpinned items by default. Change that in **Settings… → Keep up to … items** (10 to 10,000). Lowering it below what's stored asks before deleting the oldest items. The menu-bar menu has Pause Clipboard Recording and Clear Clipboard History.
 
 **Privacy**: history is stored in `~/Library/Application Support/ClipboardManager/` (`history.json` plus an `Images` folder), readable only by you. Copies marked concealed or transient (as password managers do) are skipped.
 
