@@ -49,17 +49,14 @@ final class HotKeys {
         return false
     }
 
-    /// Whether `spec` could be registered right now (it parses and no other app owns it).
-    /// Our own slot named `except` doesn't count as a conflict.
-    func isAvailable(_ spec: String, except name: String) -> Bool {
+    /// Whether another app (or macOS) already owns `spec`. Our own hotkeys don't count,
+    /// so shortcuts can be swapped between our slots.
+    func isTakenByAnotherApp(_ spec: String) -> Bool {
         guard let parsed = Self.parse(spec) else { return false }
-        if slots.contains(where: { $0.key != name && Self.parse($0.value.spec).map { $0 == parsed } == true }) {
-            return false
-        }
-        if slots[name].flatMap({ Self.parse($0.spec) }).map({ $0 == parsed }) == true { return true }
-        guard let ref = register(spec, id: 0) else { return false }
+        if slots.values.contains(where: { Self.parse($0.spec).map { $0 == parsed } == true }) { return false }
+        guard let ref = register(spec, id: 0) else { return true }
         UnregisterEventHotKey(ref)
-        return true
+        return false
     }
 
     /// Turns every hotkey off, e.g. while the user records a new one (so pressing an existing

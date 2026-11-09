@@ -45,7 +45,13 @@ tccutil reset ScreenCapture com.gregc.gregsutils
 | **⇧⌘V** | Open / close clipboard history |
 | **⌃⌥N** | New note in the editor |
 
-Change them in **Settings…** (⌘, from the menu-bar menu, or from the editor's app menu): click a shortcut, then press the new key combination. It takes effect immediately. A shortcut needs ⌘, ⌃ or ⌥ plus a letter, digit, punctuation key or Space. Settings refuses one that's already taken by another app or by one of the other two. **Restore Defaults** puts everything back.
+Change them in **Settings…** (⌘, from the menu-bar menu, or from the editor's app menu): click a shortcut, then press the new key combination (Esc cancels). A shortcut needs ⌘, ⌃ or ⌥ plus a letter, digit, punctuation key or Space, and one that another app or macOS already uses is refused.
+
+### Settings
+
+Settings has Launch at Login, the three shortcuts, single-click paste, and the clipboard history limit. Changes are held in the window until you click **Save** (or press Return), which applies them all and closes it. **Cancel** (or Esc) throws them away. Closing the window with unsaved changes asks whether to save them. **Restore Defaults** fills in the defaults (it leaves Launch at Login alone); they still need Save.
+
+Save stays disabled until something has changed, and while two shortcuts are set to the same keys (that's allowed mid-edit, so you can swap two).
 
 ## Capture
 
@@ -95,7 +101,7 @@ Pinned items stay at the top in the order you pinned them, so their ⌘1–9 sho
 
 Text you copy is recorded automatically. Images are recorded only when they come from Capture; they show a thumbnail and preview.
 
-History keeps up to 200 unpinned items by default. Change that in **Settings… → Keep up to … items** (10 to 10,000). Lowering it below what's stored asks before deleting the oldest items. The menu-bar menu has Pause Clipboard Recording and Clear Clipboard History.
+History keeps up to 200 unpinned items by default. Change that in **Settings… → Keep up to … items** (10 to 10,000). If a lower limit would delete items, Save asks first. The menu-bar menu has Pause Clipboard Recording and Clear Clipboard History.
 
 **Privacy**: history is stored in `~/Library/Application Support/ClipboardManager/` (`history.json` plus an `Images` folder), readable only by you. Copies marked concealed or transient (as password managers do) are skipped.
 
